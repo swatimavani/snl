@@ -1,0 +1,73 @@
+<html>
+    <head>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script>
+        <script>
+            var socket = io('http://localhost:8080');           
+            var _userId = 621726;
+            var _userId2 = 233943;
+            socket.emit("add user",{user_id:_userId});           
+                      
+            data = {user_id:_userId,user_id2:_userId2,roomName:'testing'};
+            socket.emit('CreateRoom',data);   
+            socket.on("OnCreatedRoom",function(data){
+                console.log("OnCreatedRoom:",data);
+            });                   
+            // socket.emit("SetPlayerCustomProperties",{n: "Mehul", c: "Mehul", user_id: _userId});
+            socket.on("challenge request",function(data){
+                console.log(data);
+            });
+                // socket.emit("MessageToAll",{data:'test'});
+            
+
+        </script>
+
+        <!-- <script src="https://www.gstatic.com/firebasejs/4.6.0/firebase.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/4.6.0/firebase-app.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/4.6.0/firebase-auth.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/4.6.0/firebase-database.js"></script>
+        
+        <script>
+            var config = {
+                apiKey: "AIzaSyCVEKtxQhAARpk_24Xw-wpigtBeuS4DyLQ",
+                authDomain: "snakes-and-ladders-3d.firebaseapp.com",
+                databaseURL: "https://snakes-and-ladders-3d.firebaseio.com",
+                storageBucket: "snakes-and-ladders-3d.appspot.com"
+              };
+              firebase.initializeApp(config);
+
+              var pageSize = 5;
+              var ref = firebase.database().ref('Users').orderByKey().limitToLast(pageSize);
+              
+              function paginate(cursor) {
+                var paginatedRef = ref;
+                if (cursor) { 	
+                  paginatedRef = ref.endAt(cursor);
+                }
+                return paginatedRef.once('value').then(snap => snap.val());
+              }
+              isFetch = 0;
+              
+              function readAllPages(cursor) {
+                  isFetch = isFetch+1;
+                  console.log(isFetch);
+                  var records = [];
+                  console.log(cursor);
+                return paginate(cursor).then(values => {
+                  var orderedKeys = Object.keys(values);
+                  
+                  console.log(values);
+                  
+                  if (orderedKeys.length == pageSize && isFetch < 5) {   	
+                      console.log(orderedKeys.length);
+                      return readAllPages(orderedKeys[orderedKeys.length-1]);
+                    
+                  }
+                });
+              }
+              
+              readAllPages();
+        </script> -->
+    </head>
+    <body>
+    </body>
+</html>

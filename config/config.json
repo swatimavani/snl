@@ -1,0 +1,41 @@
+{
+  "development": {
+    "username": "root",
+    "password": null,
+    "database": "snakes_n_ladders",
+    "host": "127.0.0.1",
+    "dialect": "mysql",
+    "port_no":8080,
+    "secret":"__snacks_n_ladders__",
+    "enableLogs" : true,
+    "logType": "console",
+    "logging":false,
+		"allowSwitchingRoom" : true,
+		"maxPlayersinRoom" : 2,
+		"maxRooms" : 0
+  },
+  "test": {
+    "username": "root",
+    "password": null,
+    "database": "database_test",
+    "host": "127.0.0.1",
+    "dialect": "mysql"
+  },
+  "production": {
+    "username": "root",
+    "password": null,
+    "database": "database_production",
+    "host": "127.0.0.1",
+    "dialect":"mysql",
+    "dialectOptions": {
+        "bigNumberStrings": true
+    },
+    "port_no":8080,
+    "secret":"__snacks_n_ladders__",
+    "enableLogs" : false,
+		"logType": "file",
+		"allowSwitchingRoom" : true,
+		"maxPlayersinRoom" : 2,
+		"maxRooms" : 0
+  }
+}
