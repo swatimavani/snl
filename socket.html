@@ -2,6 +2,14 @@
     <head>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script>
         <script>
+
+             for (let index = 0; index < 10000; index++) {
+                    
+                let socket = io('http://localhost:8080');
+                socket.emit("add user",{user_id:index});           
+                // socket.emit("createOrJoin",{room:{"roomSize":2},user:{"userName":"Swati2","profileLink":"Test2"}})
+
+            }
             var socket = io('http://localhost:8080');           
             var _userId = 621726;
             var _userId2 = 233943;
