@@ -2,19 +2,16 @@ var express = require('express');
 var app = express();
 const http = require('http');
 var bodyParser = require("body-parser");
-var cluster = require("cluster");
 var passport = require('passport');
 var env = process.env.NODE_ENV || 'development';
 var config = require(__dirname + '/config/config.json')[env];
 var common = require('./common');
 var errorHandlers = require('./middleware/errorHandlers');
 const socketIO = require('socket.io');
-var redis = require("redis");
 var validator = require('validator');
 const uuidv1 = require('uuid/v1');
 var port = config.port_no;
 var _ = require('lodash');
-
 
 var server = http.Server(app);
 var io = socketIO(server);
@@ -32,32 +29,25 @@ app.use(errorHandlers.error);
 server.listen(port, () => {
 	console.log("Server is up on port " + port);
 });
-const maxPlayersinRoom = config.maxPlayersinRoom;
+
 const maxRooms = config.maxRooms;
-const allowSwitchingRoom = config.allowSwitchingRoom;//true = leave current room and enter new //false = stay in current room until leave room is called
 
 const roomOptionsDefault = {
 	'isVisible': true,
 	'isOpen': true,
 	'gameStarted': false,
-	'maxPlayers': maxPlayersinRoom,
+	'maxPlayers': config.maxPlayersinRoom,
 	'customRoomProperties': {},
 };
 var rooms = [];
 var player = {};
 var player_room = {};
 var connected_user = new Array();
-
 const STATUS = {online:'online',offline:'offline',playing:'playing'};
-var user = {};
-let userIndex;
 
-var userById = async (user_id) => {
-	var user = await models.User.findById(user_id, { attributes: ['id', 'username'] });
-	return user;
-}
 io.on("connection", (socket) => {
 	socket.on('add user', function (data) {
+		let user = {};
 		socket.emit("LeaveRoom",{user_id:data.user_id});
 		socket.user_id = data.user_id;
 		user.user_id = data.user_id ? data.user_id : 0;
@@ -68,20 +58,12 @@ io.on("connection", (socket) => {
 
 	})
 	socket.on("disconnect", () => {
-		userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
+		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
 		if (userIndex >= 0) {
 			socket.emit("LeaveRoom",{});
 			var userRoomKey = "user" + connected_user[userIndex].user_id;
 			manageUserStatus(connected_user[userIndex].user_id, 'offline');
-
 			var roomData = '';
-
-
-			// if (player_room[userRoomKey] && rooms[player_room[userRoomKey]] && rooms[player_room[userRoomKey]]['playerList']) {
-			// 	if (Object.keys(rooms[player_room[userRoomKey]]['playerList']).length > 0) {
-			// 		roomData = rooms[player_room[userRoomKey]];
-			// 	}
-			// }
 			var responseData = { 'status': true, 'message': 'Player disconnected from server', room: roomData, playerId: connected_user[userIndex].user_id };
 			socket.emit("OnDisconnectedFromServer", responseData);
 			console.log("Socket disconnected: " + socket.id);
@@ -91,17 +73,19 @@ io.on("connection", (socket) => {
 	socket.on("CreateRoom", async function(data,callback) {
 		common.Log("create room", 'info', true);
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
+		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
 		console.log("Friend: " + data.user_id2);
 		var friend_user_id = data.user_id2;
 
-		if (connected_user[socket.user_id].isInRoom === false) {
+		if (connected_user[userIndex].isInRoom === false) {
+			console.log("'Is in room");
 			var roomName = data.roomName ? data.roomName : uuidv1();
 			var roomIndex = _.findIndex(rooms,{id:roomName});
 			if(roomIndex < 0){
-				var roomOptions = roomOptionsDefault;
+				let roomOptions = roomOptionsDefault;
 				let playerList = [];
 
-				roomOptions.isVisible = data.customRoomProperties.isVisible == 'false' ? false : true;
+				roomOptions.isVisible = data.customRoomProperties && data.customRoomProperties.isVisible == 'false' ? false : true;
 				roomOptions.isOpen = data.isOpen ? data.isOpen : roomOptions.isOpen;
 				roomOptions.maxPlayers = data.maxPlayers ? data.maxPlayers : roomOptions.maxPlayers;
 				roomOptions.customRoomProperties = data.customRoomProperties ? data.customRoomProperties : roomOptions.customRoomProperties;
@@ -110,7 +94,7 @@ io.on("connection", (socket) => {
 				player_room[_userId] = roomIndex;
 				rooms.push({ id: roomName, roomOptions: roomOptions, playerList: playerList });
 				fullroomdata = GetFullRoomData(roomIndex);
-				connected_user[socket.user_id].isInRoom = true;
+				connected_user[userIndex].isInRoom = true;
 				socket.join(roomName);
 				if (data.user_id2 > 0) {
 					await sendRequest(data,socket,roomName);
@@ -148,7 +132,8 @@ io.on("connection", (socket) => {
 	})
 	socket.on("JoinRoom", (data) => {
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
-		if(connected_user[socket.user_id].isInRoom === false){
+		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
+		if(connected_user[userIndex].isInRoom === false){
 			let roomIndex = _.findIndex(rooms,{id:data.roomName});
 			if (rooms[roomIndex] >= 0) {
 				if (rooms[roomIndex]["playerList"] && Object.keys(rooms[data.roomName]["playerList"]).length < GetMaxAllowedPlayersInRoom(roomIndex)) {
@@ -178,7 +163,6 @@ io.on("connection", (socket) => {
 		}
 	});
 
-
 	socket.on("GetRoomList", () => {
 		var open_rooms = Array();
 		for (roomId in rooms) {
@@ -207,7 +191,7 @@ io.on("connection", (socket) => {
 
 	socket.on("LeaveRoom", (data) => {
 		let _userId = socket.user_id ? "user" + socket.user_id : "user0";
-		let room = player_room[_userId] && rooms[player_room[_userId]]? rooms[player_room[_userId]]?null;
+		let room = player_room[_userId] && rooms[player_room[_userId]]? rooms[player_room[_userId]]:null;
 		if (room) {
 			let roomIndex = player_room[_userId];
 			let roomName = room.id;
@@ -215,7 +199,7 @@ io.on("connection", (socket) => {
 			manageUserStatus(data.user_id, 'online');
 			if (rooms[roomIndex] && rooms[roomIndex]['playerList'] && rooms[roomIndex]['playerList'][_userId])
 				delete rooms[roomIndex]['playerList'][_userId];
-			if (Object.keys(roomIndex]['playerList']) == 0) {
+			if (Object.keys(rooms[roomIndex]['playerList']).length == 0) {
 				delete rooms[roomIndex];
 			}else{
 				fullroomdata = GetFullRoomData(roomIndex);
@@ -241,29 +225,6 @@ io.on("connection", (socket) => {
 			io.in(data.roomName).emit(data.methodName);
 		}
 	});
-
-	socket.on('MessageToFirstPlayer', function (data) {
-		common.Log('Message To First Player', 'info', true);
-		let _userId = data.user_id ? "user" + data.user_id : "user0";
-		if (player_room[_userId] && rooms[player_room[_userId]] && rooms[player_room[_userId]]['playerList']) {
-			let firstPlayer = rooms[player_room[_userId]]['playerList'][Object.keys(rooms[player_room[_userId]]['playerList'])[0]];
-			if (typeof data.data !== "undefined" && data.data != null)
-				socket.to(firstPlayer).emit(data.methodName, data.data);
-			else
-				socket.to(firstPlayer).emit(data.methodName);
-		}
-	});
-	socket.on("GameStop", (data) => {
-		io.of('/').in(data.roomName).clients(function (error, clients) {
-			if (clients.length > 0) {
-				LogData('clients in the room: ' + clients);
-				clients.forEach(function (socket_id) {
-					io.sockets.sockets[socket_id].leave(data.roomName);
-					io.sockets.connected[socket_id].disconnect();
-				});
-			}
-		});
-	});
 });
 
 function GetFullRoomData(roomIndex) {
@@ -284,7 +245,7 @@ function GetFullRoomData(roomIndex) {
 
 
 function sendRequest(data,socket,roomName){
-	userIndex = _.findIndex(connected_user, { user_id: data.user_id2 });
+	let userIndex = _.findIndex(connected_user, { user_id: data.user_id2 });
 	if (connected_user[userIndex] && connected_user[userIndex].status != 'playing' && connected_user[userIndex].status != 'offline') {
 		models.User.findById(data.user_id, { attributes: ['id', 'username'] }).then(user => {
 			if (user) {
