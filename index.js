@@ -45,13 +45,11 @@ var player_room = {};
 var connected_user = new Array();
 const STATUS = { online: 'online', offline: 'offline', playing: 'playing' };
 
+
 io.on("connection", (socket) => {
-
-	socket.on('get', function (data) {
-		socket.emit('onGet', { user: connected_user.length, rooms: Object.keys(rooms).length });
-	});
-
+	console.log('connected');
 	socket.on('add user', function (data) {
+		console.log('add user',data);
 		let user = {};
 		socket.emit("LeaveRoom", { user_id: data.user_id });
 		socket.user_id = data.user_id;
@@ -59,12 +57,11 @@ io.on("connection", (socket) => {
 		user.socket_id = socket.id;
 		user.isInRoom = false;
 		connected_user.push(user);
-		console.log("add ", data.user_id);
-
 		manageUserStatus(user.user_id, STATUS.online);
 
 	})
 	socket.on("disconnect", () => {
+		console.log('disconnected');
 		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
 		if (userIndex >= 0) {
 			LeaveRoom(socket);
@@ -73,23 +70,18 @@ io.on("connection", (socket) => {
 			var roomData = '';
 			var responseData = { 'status': true, 'message': 'Player disconnected from server', room: roomData, playerId: connected_user[userIndex].user_id };
 			socket.emit("OnDisconnectedFromServer", responseData);
-			console.log("Socket disconnected: " + socket.id);
 			delete connected_user[userIndex];
 		}
 
 	});
 	socket.on("CreateRoom", async function (data, callback) {
-		common.Log("create room", 'info', true);
+		console.log('CreateRoom',data);
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
-		console.log("Usre: " + socket.user_id);
 
 		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
-		// console.log("Friend: " + data.user_id2);
 		var friend_user_id = data.user_id2;
-		console.log("data", data);
 
 		if (userIndex >= 0 && connected_user[userIndex].isInRoom === false) {
-			console.log("'Is in room");
 			var roomName = data.roomName ? data.roomName : uuidv1();
 			var roomIndex = _.findIndex(rooms, { id: roomName });
 			if (roomIndex < 0) {
@@ -123,49 +115,38 @@ io.on("connection", (socket) => {
 		}
 	});
 
-	socket.on('manage request', async function (data) {
+	socket.on('manage request',function (data) {
+		console.log('manage request',data);
 		if (data.status == 'accept') {
-
-
 			let roomIndex = _.findIndex(rooms, { id: data.roomName });
-			console.log("roomIndex", roomIndex);
 
 			fullroomdata = GetFullRoomData(roomIndex);
 			var playerListLength = Object.keys(rooms[roomIndex]["playerList"]).length;
-			console.log("rooms", rooms);
-
-			console.log("playerListLength", playerListLength);
 
 			var user_ids = [];
 			if (playerListLength > 0) {
-				user_ids = await Object.keys(rooms[roomIndex]['playerList']).map(function (key) {
-					console.log("key", key);
-
+				user_ids = Object.keys(rooms[roomIndex]['playerList']).map(function (key) {
 					return rooms[roomIndex]['playerList'][key];
 				});
 			}
-
 			var roomCreator = user_ids.length > 0 ? user_ids[0] : 0;
+			
 			io.in(data.roomName).emit('manage response', { 'status': true, 'message': "Request accepted", data: roomCreator });
-			console.log("userIds", user_ids);
 
 		} else {
 			io.in(data.roomName).emit('manage response', { 'status': false, 'message': "Request rejected", data: data });
 		}
 	})
 	socket.on("JoinRoom", (data) => {
+		console.log('JoinRoom',data);
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
 		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
 
 		if (userIndex >= 0 && connected_user[userIndex].isInRoom === false) {
 
-
 			let roomIndex = _.findIndex(rooms, { id: data.roomName });
 
-
 			if (roomIndex >= 0) {
-
-
 
 				if (rooms[roomIndex]["playerList"] && Object.keys(rooms[roomIndex]["playerList"]).length < GetMaxAllowedPlayersInRoom(roomIndex)) {
 					socket.join(data.roomName);
@@ -200,6 +181,7 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("GetRoomList", () => {
+		console.log('GetRoomList');
 		var open_rooms = Array();
 		for (roomId in rooms) {
 			let temp_room = {};
@@ -218,6 +200,7 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("SetPlayerCustomProperties", (data) => {
+		console.log('SetPlayerCustomProperty',data);
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
 		if (!player[_userId]) player[_userId] = {};
 		for (var key in data) {
@@ -228,6 +211,7 @@ io.on("connection", (socket) => {
 	socket.on("LeaveRoom", (data) => LeaveRoom(socket));
 
 	socket.on('Message', function (data) {
+		console.log('Message');
 		if (data.data)
 			socket.to(data.data.roomName).emit(data.methodName, data.data);
 		else
@@ -235,6 +219,7 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on('MessageToAll', function (data) {
+		console.log('MesageToAll');
 		if (data.data) {
 			io.in(data.data.roomName).emit(data.methodName, data.data);
 		}
@@ -247,7 +232,6 @@ io.on("connection", (socket) => {
 function LeaveRoom(socket) {
 	let _userId = socket.user_id ? "user" + socket.user_id : "user0";
 	let room = player_room[_userId] && rooms[player_room[_userId]] ? rooms[player_room[_userId]] : null;
-	console.log("room", room);
 
 	if (room) {
 		let roomIndex = player_room[_userId];
@@ -268,29 +252,12 @@ function LeaveRoom(socket) {
 }
 
 function GetFullRoomData(roomIndex) {
-	// let room = rooms[roomIndex] ? rooms[roomIndex] : null;
-	// if (room) {
-	// 	fullroomdata = room;
-	// 	fullroomdata['playerList'] = Array();
-	// 	for (var key in room['playerList']) {
-	// 		if (player[key])
-	// 			fullroomdata['playerList'].push({ id: player[key].user_id, customPlayerProperties: player[key] });
-	// 		else 
-	// 			fullroomdata['playerList'][key] = '';
-	// 	}
-	// 	return fullroomdata;
-	// }
-	// return '';
-
-
-
-	if (typeof rooms[roomIndex] !== "undefined") {
+	if (rooms[roomIndex]) {
 		fullroomdata = JSON.parse(JSON.stringify(rooms[roomIndex]));
 		fullroomdata['playerList'] = Array();
 		for (var key in rooms[roomIndex]['playerList']) {
-			if (typeof player[key] !== "undefined") {
+			if (player[key]) {
 				fullroomdata['playerList'].push({ id: player[key].user_id, customPlayerProperties: player[key] });
-				// fullroomdata['playerList'].push({id:key, customPlayerProperties:player[key]});
 			}
 			else fullroomdata['playerList'][key] = '';
 		}
