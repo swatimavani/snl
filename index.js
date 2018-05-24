@@ -49,7 +49,7 @@ const STATUS = { online: 'online', offline: 'offline', playing: 'playing' };
 io.on("connection", (socket) => {
 	console.log('connected');
 	socket.on('add user', function (data) {
-		console.log('add user',data);
+		console.log('add user',data,socket.id);
 		let user = {};
 		socket.emit("LeaveRoom", { user_id: data.user_id });
 		socket.user_id = data.user_id;
@@ -96,7 +96,9 @@ io.on("connection", (socket) => {
 				playerList[_userId] = data.user_id;
 				player_room[_userId] = roomIndex;
 				rooms.push({ id: roomName, roomOptions: roomOptions, playerList: playerList });
-				fullroomdata = GetFullRoomData(roomIndex);
+				newRoomIndex = _.findIndex(rooms, { id: roomName });
+				fullroomdata = GetFullRoomData(newRoomIndex);
+				console.log('oncreatefullroomdata',fullroomdata);
 				connected_user[userIndex].isInRoom = true;
 				socket.join(roomName);
 				if (data.user_id2 > 0) {
@@ -121,6 +123,7 @@ io.on("connection", (socket) => {
 			let roomIndex = _.findIndex(rooms, { id: data.roomName });
 
 			fullroomdata = GetFullRoomData(roomIndex);
+			console.log('onmanagerequest',fullroomdata);
 			var playerListLength = Object.keys(rooms[roomIndex]["playerList"]).length;
 
 			var user_ids = [];
@@ -130,9 +133,8 @@ io.on("connection", (socket) => {
 				});
 			}
 			var roomCreator = user_ids.length > 0 ? user_ids[0] : 0;
-			
+			var room = io.sockets.adapter.rooms[data.roomName];		
 			io.in(data.roomName).emit('manage response', { 'status': true, 'message': "Request accepted", data: roomCreator });
-
 		} else {
 			io.in(data.roomName).emit('manage response', { 'status': false, 'message': "Request rejected", data: data });
 		}
@@ -153,6 +155,7 @@ io.on("connection", (socket) => {
 					rooms[roomIndex]["playerList"][_userId] = socket.user_id;
 					player_room[_userId] = roomIndex;
 					fullroomdata = GetFullRoomData(roomIndex);
+					console.log('onjoinroom',fullroomdata);
 					console.log("Before GameStart", Object.keys(rooms[roomIndex]['playerList']).length == GetMaxAllowedPlayersInRoom(roomIndex));
 
 					if (Object.keys(rooms[roomIndex]['playerList']).length == GetMaxAllowedPlayersInRoom(roomIndex)) {
@@ -206,6 +209,7 @@ io.on("connection", (socket) => {
 		for (var key in data) {
 			player[_userId][key] = data[key];
 		}
+		console.log('player property',JSON.stringify(player));
 	});
 
 	socket.on("LeaveRoom", (data) => LeaveRoom(socket));
@@ -251,20 +255,40 @@ function LeaveRoom(socket) {
 	}
 }
 
-function GetFullRoomData(roomIndex) {
-	if (rooms[roomIndex]) {
-		fullroomdata = JSON.parse(JSON.stringify(rooms[roomIndex]));
+// function GetFullRoomData(roomIndex) {
+// 	console.log('roomIndex',roomIndex);
+// 	if (rooms[roomIndex]) {
+// 		fullroomdata = rooms[roomIndex];
+// 		fullroomdata['playerList'] = Array();
+// 		
+// 		// for (var key in Object.keys(rooms[roomIndex]['playerList'])) {
+// 		// 	cl
+// 		// 	if (player[key]) {
+// 		// 		fullroomdata['playerList'].push({ id: player[key].user_id, customPlayerProperties: player[key] });
+// 		// 	}
+// 		// 	else fullroomdata['playerList'][key] = '';
+// 		// }
+// 		return fullroomdata;
+// 	}
+// 	return '';
+
+// }
+
+
+function GetFullRoomData(roomName){
+	if(typeof rooms[roomName]!=="undefined"){
+		fullroomdata = JSON.parse(JSON.stringify(rooms[roomName]));
 		fullroomdata['playerList'] = Array();
-		for (var key in rooms[roomIndex]['playerList']) {
-			if (player[key]) {
-				fullroomdata['playerList'].push({ id: player[key].user_id, customPlayerProperties: player[key] });
+		for(var key in rooms[roomName]['playerList']){		
+			if(typeof player[key]!=="undefined"){			
+				fullroomdata['playerList'].push({id:player[key].user_id, customPlayerProperties:player[key]});
+				// fullroomdata['playerList'].push({id:key, customPlayerProperties:player[key]});
 			}
 			else fullroomdata['playerList'][key] = '';
 		}
 		return fullroomdata;
 	}
 	return '';
-
 }
 
 
