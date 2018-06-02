@@ -43,13 +43,13 @@ var rooms = [];
 var player = {};
 var player_room = {};
 var connected_user = new Array();
-const STATUS = { online: 'online', offline: 'offline', playing: 'playing' };
+const STATUS = { online: 'online', offline: 'offline', playing: 'playing', requested: 'requested' };
 
 
 io.on("connection", (socket) => {
 	console.log('connected');
 	socket.on('add user', function (data) {
-		console.log('add user',data,socket.id);
+		console.log('add user', data, socket.id);
 		let user = {};
 		socket.emit("LeaveRoom", { user_id: data.user_id });
 		socket.user_id = data.user_id;
@@ -66,7 +66,7 @@ io.on("connection", (socket) => {
 		if (userIndex >= 0) {
 			LeaveRoom(socket);
 			var userRoomKey = "user" + connected_user[userIndex].user_id;
-			manageUserStatus(connected_user[userIndex].user_id, 'offline');
+			manageUserStatus(connected_user[userIndex].user_id, STATUS.offline);
 			var roomData = '';
 			var responseData = { 'status': true, 'message': 'Player disconnected from server', room: roomData, playerId: connected_user[userIndex].user_id };
 			socket.emit("OnDisconnectedFromServer", responseData);
@@ -75,55 +75,25 @@ io.on("connection", (socket) => {
 
 	});
 	socket.on("CreateRoom", async function (data, callback) {
-		console.log('CreateRoom',data);
-		var _userId = data.user_id ? "user" + data.user_id : "user0";
 
-		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
-		var friend_user_id = data.user_id2;
-
-		if (userIndex >= 0 && connected_user[userIndex].isInRoom === false) {
-			var roomName = data.roomName ? data.roomName : uuidv1();
-			var roomIndex = _.findIndex(rooms, { id: roomName });
-			if (roomIndex < 0) {
-				let roomOptions = roomOptionsDefault;
-				let playerList = [];
-
-				roomOptions.isVisible = data.customRoomProperties && data.customRoomProperties.isVisible == 'false' ? false : true;
-				roomOptions.isOpen = data.isOpen ? data.isOpen : roomOptions.isOpen;
-				roomOptions.maxPlayers = data.maxPlayers ? data.maxPlayers : roomOptions.maxPlayers;
-				roomOptions.customRoomProperties = data.customRoomProperties ? data.customRoomProperties : roomOptions.customRoomProperties;
-
-				playerList[_userId] = data.user_id;
-				player_room[_userId] = roomIndex;
-				rooms.push({ id: roomName, roomOptions: roomOptions, playerList: playerList });
-				newRoomIndex = _.findIndex(rooms, { id: roomName });
-				fullroomdata = GetFullRoomData(newRoomIndex);
-				console.log('oncreatefullroomdata',fullroomdata);
-				connected_user[userIndex].isInRoom = true;
-				socket.join(roomName);
-				if (data.user_id2 > 0) {
-					await sendRequest(data, socket, roomName);
-				}
-				socket.emit("OnCreatedRoom", { 'status': true, 'message': "room created " + roomName });
-				socket.emit("OnJoinedRoom", { 'status': true, 'message': "room created " + roomName + ":", room: fullroomdata, playerId: data.user_id });
-				io.in(roomName).emit("OnPlayerConnected", { 'status': true, 'message': "room created " + roomName + ":", room: fullroomdata, playerId: data.user_id });
-				common.Log("Room created: " + roomName, 'info', true);
-			} else {
-				socket.emit('OnCreateRoomFailed', { 'status': false, 'message': "room already exists" });
-			}
+		var roomName = data.roomName ? data.roomName : uuidv1();
+		if (data.user_id2 > 0) {
+			await sendRequest(data, socket, roomName);
 		} else {
-			common.Log("Maximum number of rooms limit reached", 'info', true);
-			socket.emit('OnCreateRoomFailed', { 'status': false, 'message': "Maximum number of rooms limit reached" });
+			manageUserStatus(socket.user_id, STATUS.playing);
+			CreateRoom(socket, data, roomName);
 		}
+
 	});
 
-	socket.on('manage request',function (data) {
-		console.log('manage request',data);
-		if (data.status == 'accept') {
-			let roomIndex = _.findIndex(rooms, { id: data.roomName });
+	socket.on('manage request', function (data) {
+		console.log('manage request', data);
+		let roomIndex = _.findIndex(rooms, { id: data.roomName });
+		console.log('index', roomIndex);
+		
+		fullroomdata = GetFullRoomData(roomIndex);
+		if (roomIndex >= 0) {
 
-			fullroomdata = GetFullRoomData(roomIndex);
-			console.log('onmanagerequest',fullroomdata);
 			var playerListLength = Object.keys(rooms[roomIndex]["playerList"]).length;
 
 			var user_ids = [];
@@ -133,14 +103,28 @@ io.on("connection", (socket) => {
 				});
 			}
 			var roomCreator = user_ids.length > 0 ? user_ids[0] : 0;
-			var room = io.sockets.adapter.rooms[data.roomName];		
-			io.in(data.roomName).emit('manage response', { 'status': true, 'message': "Request accepted", data: roomCreator });
-		} else {
-			io.in(data.roomName).emit('manage response', { 'status': false, 'message': "Request rejected", data: data });
+
+			if (data.status == 'accept') {
+				console.log("manage ", JSON.stringify(player_room));
+
+				io.in(data.roomName).emit('manage response', { 'status': true, 'message': "Request accepted", data: roomCreator });
+			} else {
+				console.log(JSON.stringify(connected_user));
+				let creatorIndex = _.findIndex(connected_user, { user_id: roomCreator });
+				manageUserStatus(connected_user[creatorIndex].user_id, STATUS.online);
+				manageUserStatus(socket.user_id, STATUS.online);
+
+				LeaveFriendRoom(connected_user[creatorIndex].socket_id);
+				io.in(data.roomName).emit('manage response', { 'status': false, 'message': "Request rejected", data: 0 });
+			}
+		}else{
+			manageUserStatus(socket.user_id, STATUS.online);
+			
+			
 		}
 	})
 	socket.on("JoinRoom", (data) => {
-		console.log('JoinRoom',data);
+
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
 		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
 
@@ -155,13 +139,11 @@ io.on("connection", (socket) => {
 					rooms[roomIndex]["playerList"][_userId] = socket.user_id;
 					player_room[_userId] = roomIndex;
 					fullroomdata = GetFullRoomData(roomIndex);
-					console.log('onjoinroom',fullroomdata);
-					console.log("Before GameStart", Object.keys(rooms[roomIndex]['playerList']).length == GetMaxAllowedPlayersInRoom(roomIndex));
 
 					if (Object.keys(rooms[roomIndex]['playerList']).length == GetMaxAllowedPlayersInRoom(roomIndex)) {
 						console.log("GameStart");
 						if (StartGame(roomIndex)) {
-							
+
 							var user_ids = [];
 							var user_ids = Object.keys(rooms[roomIndex]['playerList']).map(function (key) {
 								return rooms[roomIndex]['playerList'][key];
@@ -203,13 +185,13 @@ io.on("connection", (socket) => {
 	});
 
 	socket.on("SetPlayerCustomProperties", (data) => {
-		console.log('SetPlayerCustomProperty',data);
+		console.log('SetPlayerCustomProperty', data);
 		var _userId = data.user_id ? "user" + data.user_id : "user0";
 		if (!player[_userId]) player[_userId] = {};
 		for (var key in data) {
 			player[_userId][key] = data[key];
 		}
-		console.log('player property',JSON.stringify(player));
+		console.log('player property', JSON.stringify(player));
 	});
 
 	socket.on("LeaveRoom", (data) => LeaveRoom(socket));
@@ -233,9 +215,59 @@ io.on("connection", (socket) => {
 	});
 });
 
+function CreateRoom(socket, data, roomName) {
+	var _userId = data.user_id ? "user" + data.user_id : "user0";
+
+	let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
+	var friend_user_id = data.user_id2;
+	console.log("CreateRoom", connected_user[userIndex]);
+
+	if (userIndex >= 0 && connected_user[userIndex].isInRoom === false) {
+
+		var roomIndex = _.findIndex(rooms, { id: roomName });
+		if (roomIndex < 0) {
+			let roomOptions = roomOptionsDefault;
+			let playerList = [];
+
+			roomOptions.isVisible = data.customRoomProperties && data.customRoomProperties.isVisible == 'false' ? false : true;
+			roomOptions.isOpen = data.isOpen ? data.isOpen : roomOptions.isOpen;
+			roomOptions.maxPlayers = data.maxPlayers ? data.maxPlayers : roomOptions.maxPlayers;
+			roomOptions.customRoomProperties = data.customRoomProperties ? data.customRoomProperties : roomOptions.customRoomProperties;
+
+			playerList[_userId] = data.user_id;
+			rooms.push({ id: roomName, roomOptions: roomOptions, playerList: playerList });
+			newRoomIndex = _.findIndex(rooms, { id: roomName });
+			player_room[_userId] = newRoomIndex;
+			fullroomdata = GetFullRoomData(newRoomIndex);
+			//manageUserStatus(socket.user_id, STATUS.playing);
+
+			connected_user[userIndex].isInRoom = true;
+			socket.join(roomName);
+
+			socket.emit("OnCreatedRoom", { 'status': true, 'message': "room created " + roomName });
+			socket.emit("OnJoinedRoom", { 'status': true, 'message': "room created " + roomName + ":", room: fullroomdata, playerId: data.user_id });
+			io.in(roomName).emit("OnPlayerConnected", { 'status': true, 'message': "room created " + roomName + ":", room: fullroomdata, playerId: data.user_id });
+			common.Log("Room created: " + roomName, 'info', true);
+		} else {
+			socket.emit('OnCreateRoomFailed', { 'status': false, 'message': "room already exists" });
+		}
+	} else {
+		common.Log("Maximum number of rooms limit reached", 'info', true);
+		socket.emit('OnCreateRoomFailed', { 'status': false, 'message': "Maximum number of rooms limit reached" });
+		manageUserStatus(socket.user_id, STATUS.online);
+		if (data.user_id2 > 0) {
+			manageUserStatus(socket.user_id2, STATUS.online);
+
+		}
+
+	}
+}
+
 function LeaveRoom(socket) {
+
 	let _userId = socket.user_id ? "user" + socket.user_id : "user0";
 	let room = player_room[_userId] && rooms[player_room[_userId]] ? rooms[player_room[_userId]] : null;
+	console.log("LeaveRoom", JSON.stringify(player_room));
 
 	if (room) {
 		let roomIndex = player_room[_userId];
@@ -254,7 +286,27 @@ function LeaveRoom(socket) {
 		socket.emit('OnLeftRoom', { 'status': true, 'message': 'Player left room', room: room, playerId: socket.user_id });
 	}
 }
+function LeaveFriendRoom(userId) {
+	let _userId = userId ? "user" + userId : "user0";
+	let room = player_room[_userId] && rooms[player_room[_userId]] ? rooms[player_room[_userId]] : null;
+	console.log("LeaveRoom", JSON.stringify(player_room));
 
+	if (room) {
+		let roomIndex = player_room[_userId];
+		let roomName = room.id;
+		socket.leave(roomName);
+		manageUserStatus(socket.user_id, STATUS.online);
+		if (rooms[roomIndex] && rooms[roomIndex]['playerList'] && rooms[roomIndex]['playerList'][_userId])
+			delete rooms[roomIndex]['playerList'][_userId];
+		if (Object.keys(rooms[roomIndex]['playerList']).length == 0) {
+			delete rooms[roomIndex];
+		} else {
+			fullroomdata = GetFullRoomData(roomIndex);
+			io.in(roomName).emit('OnPlayerDisconnected', { 'status': true, 'messsage': 'Player left room', room: fullroomdata, playerId: socket.user_id });
+		}
+		delete player_room[_userId];
+	}
+}
 // function GetFullRoomData(roomIndex) {
 // 	console.log('roomIndex',roomIndex);
 // 	if (rooms[roomIndex]) {
@@ -275,13 +327,13 @@ function LeaveRoom(socket) {
 // }
 
 
-function GetFullRoomData(roomName){
-	if(typeof rooms[roomName]!=="undefined"){
+function GetFullRoomData(roomName) {
+	if (typeof rooms[roomName] !== "undefined") {
 		fullroomdata = JSON.parse(JSON.stringify(rooms[roomName]));
 		fullroomdata['playerList'] = Array();
-		for(var key in rooms[roomName]['playerList']){		
-			if(typeof player[key]!=="undefined"){			
-				fullroomdata['playerList'].push({id:player[key].user_id, customPlayerProperties:player[key]});
+		for (var key in rooms[roomName]['playerList']) {
+			if (typeof player[key] !== "undefined") {
+				fullroomdata['playerList'].push({ id: player[key].user_id, customPlayerProperties: player[key] });
 				// fullroomdata['playerList'].push({id:key, customPlayerProperties:player[key]});
 			}
 			else fullroomdata['playerList'][key] = '';
@@ -294,7 +346,12 @@ function GetFullRoomData(roomName){
 
 function sendRequest(data, socket, roomName) {
 	let userIndex = _.findIndex(connected_user, { user_id: data.user_id2 });
-	if (connected_user[userIndex] && connected_user[userIndex].status != 'playing' && connected_user[userIndex].status != 'offline') {
+
+
+	if (connected_user[userIndex] && connected_user[userIndex].status != STATUS.playing && connected_user[userIndex].status != STATUS.offline) {
+		manageUserStatus(data.user_id2, STATUS.playing);
+		CreateRoom(socket, data, roomName);
+
 		models.User.findById(data.user_id, { attributes: ['id', 'username'] }).then(user => {
 			if (user) {
 				var responseData = { 'status': true, 'message': "room created", data: { user: user, roomName: roomName } };
@@ -304,7 +361,9 @@ function sendRequest(data, socket, roomName) {
 				io.to(connected_user[userIndex].socket_id).emit('challenge request', responseData);
 			}
 		});
+
 	} else {
+
 		socket.emit('challenge request', { 'status': false, 'message': "Challenging user is Offline or Playing with other.", data: {} });
 	}
 
@@ -332,11 +391,20 @@ function manageUserStatus(user_id, status) {
 	user_id = Array.isArray(user_id) ? user_id : [user_id];
 
 	user_id.forEach(function (user) {
-		let userIndex = _.findIndex(connected_user, { user_id: user_id });
+		let userIndex = _.findIndex(connected_user, { user_id: user });
 
-		if (userIndex >= 0)
+		if (userIndex >= 0) {
 			connected_user[userIndex].status = status;
+
+			if (status == STATUS.online || status == STATUS.offline) {
+				connected_user[userIndex].isInRoom = false;
+			}
+		}
+		console.log("Manage User status", connected_user[userIndex]);
+
+
 	});
+
 	models.User.update({ status: status }, { where: { id: { $in: user_id } } });
 }
 
