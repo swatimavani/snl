@@ -4,6 +4,10 @@ const http = require('http');
 var bodyParser = require("body-parser");
 var passport = require('passport');
 var env = process.env.NODE_ENV || 'development';
+console.log(env);
+console.log(process.env.NODE_ENV);
+
+
 var config = require(__dirname + '/config/config.json')[env];
 var common = require('./common');
 var errorHandlers = require('./middleware/errorHandlers');
@@ -60,13 +64,13 @@ io.on("connection", (socket) => {
 		manageUserStatus(user.user_id, STATUS.online);
 
 	})
-	socket.on("disconnect", () => {
+	socket.on("disconnect", async() => {
 		console.log('disconnected');
 		let userIndex = _.findIndex(connected_user, { user_id: socket.user_id });
 		if (userIndex >= 0) {
 			LeaveRoom(socket);
 			var userRoomKey = "user" + connected_user[userIndex].user_id;
-			manageUserStatus(connected_user[userIndex].user_id, STATUS.offline);
+			await manageUserStatusOnDisconnect(connected_user[userIndex].user_id, STATUS.offline);
 			var roomData = '';
 			var responseData = { 'status': true, 'message': 'Player disconnected from server', room: roomData, playerId: connected_user[userIndex].user_id };
 			socket.emit("OnDisconnectedFromServer", responseData);
@@ -77,10 +81,11 @@ io.on("connection", (socket) => {
 	socket.on("CreateRoom", async function (data, callback) {
 
 		var roomName = data.roomName ? data.roomName : uuidv1();
+		manageUserStatus(socket.user_id, STATUS.playing);
 		if (data.user_id2 > 0) {
 			await sendRequest(data, socket, roomName);
-		} else {
-			manageUserStatus(socket.user_id, STATUS.playing);
+		}else{
+			
 			CreateRoom(socket, data, roomName);
 		}
 
@@ -106,7 +111,7 @@ io.on("connection", (socket) => {
 
 			if (data.status == 'accept') {
 				console.log("manage ", JSON.stringify(player_room));
-
+				
 				io.in(data.roomName).emit('manage response', { 'status': true, 'message': "Request accepted", data: roomCreator });
 			} else {
 				console.log(JSON.stringify(connected_user));
@@ -118,6 +123,8 @@ io.on("connection", (socket) => {
 				io.in(data.roomName).emit('manage response', { 'status': false, 'message': "Request rejected", data: 0 });
 			}
 		}else{
+			LeaveRoom(socket);
+			
 			manageUserStatus(socket.user_id, STATUS.online);
 			
 			
@@ -363,6 +370,7 @@ function sendRequest(data, socket, roomName) {
 		});
 
 	} else {
+		manageUserStatus(socket.user_id, STATUS.online);
 
 		socket.emit('challenge request', { 'status': false, 'message': "Challenging user is Offline or Playing with other.", data: {} });
 	}
@@ -407,6 +415,27 @@ function manageUserStatus(user_id, status) {
 
 	models.User.update({ status: status }, { where: { id: { $in: user_id } } });
 }
+async function manageUserStatusOnDisconnect(user_id, status) {
+	user_id = Array.isArray(user_id) ? user_id : [user_id];
+
+	user_id.forEach(function (user) {
+		let userIndex = _.findIndex(connected_user, { user_id: user });
+
+		if (userIndex >= 0) {
+			connected_user[userIndex].status = status;
+
+			if (status == STATUS.online || status == STATUS.offline) {
+				connected_user[userIndex].isInRoom = false;
+			}
+		}
+		console.log("Manage User status", connected_user[userIndex]);
+
+
+	});
+
+	await models.User.update({ status: status }, { where: { id: { $in: user_id } } });
+}
+
 
 
 function StartGame(roomIndex) {
